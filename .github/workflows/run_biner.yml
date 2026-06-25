@@ -12,6 +12,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # Memastikan pustaka grafis Tkinter tersedia di runner macOS
       - name: Install Tcl/Tk Graphics Library
         run: |
           brew install tcl-tk
@@ -26,16 +27,21 @@ jobs:
           unzip -o *.zip
           rm *.zip
 
+      # SOLUSI: Membuat folder di area aman dan mengoper argumen direktori ke macOS Launch Services
       - name: Jalankan Aplikasi GUI Menggunakan macOS Launch Services
         run: |
-          # 1. Berikan izin eksekusi penuh pada paket biner internal
+          # 1. Berikan izin eksekusi penuh ke biner utama
           chmod +x main_gui.app/Contents/MacOS/main_gui
           
-          # 2. Buka aplikasi menggunakan perintah 'open' macOS agar lolos blokir WindowServer
-          open main_gui.app
+          # 2. Buat folder Output_Sample terlebih dahulu dengan izin akses baca-tulis penuh
+          mkdir -p Output_Sample
+          chmod 777 Output_Sample
           
-          # 3. Tunggu 15 detik untuk memberi waktu aplikasi membaca Excel & membuat PDF
-          echo "Menunggu aplikasi GUI memproses data..."
+          # 3. Jalankan aplikasi menggunakan open -g (background) 
+          # Flag --args mengirimkan lokasi folder saat ini ($PWD) ke aplikasi biner
+          open -g main_gui.app --args --cwd "$PWD"
+          
+          echo "Menunggu aplikasi GUI memproses data Excel..."
           sleep 15
 
       - name: Install Tool Ekstraksi PDF
@@ -43,22 +49,22 @@ jobs:
 
       - name: Verifikasi Hasil Output PDF
         run: |
-          # 4. Ambil log sistem dari Console macOS jika aplikasi ternyata menutup sendiri
-          echo "=== MEMBACA LOG HISTORI SYSTEM (Jika ada crash) ==="
+          # 4. Ambil log diagnostik internal Apple jika aplikasi masih mengalami kendala sistem
+          echo "=== MEMBACA LOG HISTORI SYSTEM ==="
           log show --predicate 'process == "main_gui"' --last 1m || true
-          echo "=================================================="
+          echo "=================================="
 
-          # 5. Pastikan folder Output_Sample terbuat dan tidak kosong
+          # 5. Validasi keberadaan folder dan file PDF hasil autofill
           if [ ! -d "Output_Sample" ] || [ ! "$(ls -A Output_Sample/*.pdf 2>/dev/null)" ]; then
-            echo "Error: Folder Output_Sample tidak ditemukan atau aplikasi gagal mengekstrak PDF!"
+            echo "Error: Folder Output_Sample kosong atau biner gagal memproses file!"
             exit 1
           fi
           
-          # 6. Ekstrak teks dari PDF hasil untuk validasi data
+          # 6. Ekstrak teks dari PDF hasil untuk validasi konten
           FILE_PDF=$(ls Output_Sample/*.pdf | head -n 1)
           pdftotext "$FILE_PDF" teks_hasil.txt
           
-          # 7. Validasi kata kunci sampel (Ganti "Budi" sesuai data Excel Anda)
+          # 7. Validasi kata kunci sampel (Ganti "Budi" dengan data yang ada di Excel Anda)
           if grep -q "AL" teks_hasil.txt; then
             echo "Sukses: Aplikasi GUI berhasil melakukan autofill data ke PDF!"
           else
