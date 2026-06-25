@@ -3,7 +3,7 @@ name: Jalankan dan Tes Biner Autofill
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Membuat tombol manual di halaman GitHub Actions
+  workflow_dispatch: # Memunculkan tombol jalankan manual di web GitHub
 
 jobs:
   test-binary:
@@ -16,45 +16,50 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Mengunduh biner .app dari release terbaru (latest)
-          gh release download --repo ${{ github.repository }} --pattern "*.zip" --dir ./dist
-          cd dist
-          unzip *.zip
-
-      - name: Jalankan Aplikasi Autofill
-        run: |
-          # Beri izin eksekusi pada binary di dalam .app
-          # Ganti 'NamaAplikasi' dengan nama asli aplikasi Anda
-          chmod +x dist/main_gui.app/Contents/MacOS/main_gui
+          # 1. Mengunduh file zip biner dari release terbaru
+          gh release download --repo ${{ github.repository }} --pattern "*.zip" --dir ./
           
-          # Jalankan aplikasi. Pastikan file Excel input sudah ada di repositori Anda
-          ./dist/main_gui.app/Contents/MacOS/main_gui
+          # 2. Ekstrak file zip langsung di folder utama
+          unzip -o *.zip
+          
+          # 3. Hapus file zip setelah diekstrak agar bersih
+          rm *.zip
+
+      - name: Verifikasi Struktur dan Jalankan Aplikasi
+        run: |
+          # 4. Berikan izin eksekusi pada biner di dalam paket .app
+          chmod +x main_gui.app/Contents/MacOS/main_gui
+          
+          # 5. Jalankan aplikasi (Pastikan file Excel input sudah ada di repositori Anda)
+          ./main_gui.app/Contents/MacOS/main_gui
 
       - name: Install Tool Ekstraksi PDF
         run: brew install poppler
 
       - name: Verifikasi Isi PDF vs Excel
         run: |
-          # 1. Pastikan file output PDF terbentuk
-          if [ ! -f "Output_Sample/Hasil_Autofill.pdf" ]; then
-            echo "Error: File PDF tidak ditemukan di folder Output_Sample!"
+          # 6. Pastikan folder Output_Sample terbuat dan berisi PDF
+          if [ ! -d "Output_Sample" ] || [ ! "$(ls -A Output_Sample/*.pdf 2>/dev/null)" ]; then
+            echo "Error: Folder Output_Sample kosong atau file PDF tidak ditemukan!"
             exit 1
           fi
           
-          # 2. Ekstrak teks dari PDF ke file teks
-          pdftotext Output_Sample/Hasil_Autofill.pdf teks_hasil.txt
+          # 7. Ekstrak teks dari salah satu PDF hasil untuk validasi kata kunci
+          # (Menggunakan file pertama yang ditemukan di folder tersebut)
+          FILE_PDF=$(ls Output_Sample/*.pdf | head -n 1)
+          pdftotext "$FILE_PDF" teks_hasil.txt
           
-          # 3. Validasi kata kunci sampel yang harusnya ada di Excel (misal: "Budi")
+          # 8. Validasi kata kunci sampel (Ganti "Budi" dengan data yang ada di Excel Anda)
           if grep -q "AL" teks_hasil.txt; then
-            echo "Sukses: Data Excel terbukti masuk ke dalam PDF!"
+            echo "Sukses: Verifikasi berhasil! Data Excel terbukti masuk ke dalam PDF."
           else
-            echo "Error: Data Excel gagal masuk ke dalam PDF!"
+            echo "Error: Data dari Excel tidak ditemukan di dalam dokumen PDF!"
             cat teks_hasil.txt
             exit 1
           fi
 
-      - name: Simpan PDF Hasil ke Artefak
-        if: always() # Tetap unggah meskipun tes di atas gagal untuk bahan analisa
+      - name: Simpan PDF Hasil ke Artefak GitHub
+        if: always() # Langkah ini akan selalu berjalan meski tes di atas gagal (untuk bahan analisa)
         uses: actions/upload-artifact@v4
         with:
           name: Hasil-PDF-Test
