@@ -1,0 +1,29 @@
+      - name: Unduh Biner dari GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. Unduh file zip dari release tertentu (contoh versi v1.0.0)
+          gh release download v1 --repo ${{ github.repository }} --pattern "Mac-App.zip" --dir ./unduhan
+
+          # 2. Ekstrak file zip tersebut
+          cd unduhan
+          unzip Mac-App.zip
+
+      - name: Jalankan Pengujian Biner Release
+        run: |
+          # 3. Masuk ke folder hasil ekstrak dan beri izin eksekusi (chmod +x)
+          cd unduhan
+          chmod +x main_gui.app/Contents/MacOS/main_gui
+
+          # 4. Jalankan biner secara background dan tes statusnya
+          main_gui.app/Contents/MacOS/main_gui &
+          APP_PID=$!
+          sleep 5
+
+          if ps -p $APP_PID > /dev/null; then
+            echo "Biner dari Release berhasil berjalan dengan baik!"
+            kill $APP_PID
+          else
+            echo "Error: Biner dari Release crash saat dijalankan!"
+            exit 1
+          fi
