@@ -1,29 +1,61 @@
-      - name: Unduh Biner dari GitHub Release
+name: Jalankan dan Tes Biner Autofill
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Membuat tombol manual di halaman GitHub Actions
+
+jobs:
+  test-binary:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Ambil File Biner dari Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Unduh file zip dari release tertentu (contoh versi v1.0.0)
-          gh release download v1 --repo ${{ github.repository }} --pattern "Mac-App.zip" --dir ./unduhan
+          # Mengunduh biner .app dari release terbaru (latest)
+          gh release download --repo ${{ github.repository }} --pattern "*.zip" --dir ./dist
+          cd dist
+          unzip *.zip
 
-          # 2. Ekstrak file zip tersebut
-          cd unduhan
-          unzip Mac-App.zip
-
-      - name: Jalankan Pengujian Biner Release
+      - name: Jalankan Aplikasi Autofill
         run: |
-          # 3. Masuk ke folder hasil ekstrak dan beri izin eksekusi (chmod +x)
-          cd unduhan
-          chmod +x main_gui.app/Contents/MacOS/main_gui
+          # Beri izin eksekusi pada binary di dalam .app
+          # Ganti 'NamaAplikasi' dengan nama asli aplikasi Anda
+          chmod +x dist/main_gui.app/Contents/MacOS/main_gui
+          
+          # Jalankan aplikasi. Pastikan file Excel input sudah ada di repositori Anda
+          ./dist/main_gui.app/Contents/MacOS/main_gui
 
-          # 4. Jalankan biner secara background dan tes statusnya
-          main_gui.app/Contents/MacOS/main_gui &
-          APP_PID=$!
-          sleep 5
+      - name: Install Tool Ekstraksi PDF
+        run: brew install poppler
 
-          if ps -p $APP_PID > /dev/null; then
-            echo "Biner dari Release berhasil berjalan dengan baik!"
-            kill $APP_PID
-          else
-            echo "Error: Biner dari Release crash saat dijalankan!"
+      - name: Verifikasi Isi PDF vs Excel
+        run: |
+          # 1. Pastikan file output PDF terbentuk
+          if [ ! -f "Output_Sample/Hasil_Autofill.pdf" ]; then
+            echo "Error: File PDF tidak ditemukan di folder Output_Sample!"
             exit 1
           fi
+          
+          # 2. Ekstrak teks dari PDF ke file teks
+          pdftotext Output_Sample/Hasil_Autofill.pdf teks_hasil.txt
+          
+          # 3. Validasi kata kunci sampel yang harusnya ada di Excel (misal: "Budi")
+          if grep -q "AL" teks_hasil.txt; then
+            echo "Sukses: Data Excel terbukti masuk ke dalam PDF!"
+          else
+            echo "Error: Data Excel gagal masuk ke dalam PDF!"
+            cat teks_hasil.txt
+            exit 1
+          fi
+
+      - name: Simpan PDF Hasil ke Artefak
+        if: always() # Tetap unggah meskipun tes di atas gagal untuk bahan analisa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hasil-PDF-Test
+          path: Output_Sample/
