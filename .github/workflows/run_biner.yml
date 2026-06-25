@@ -12,7 +12,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Perbaikan 1: Pastikan sistem macOS memiliki Tcl/Tk terinstal untuk menjalankan Tkinter
       - name: Install Tcl/Tk Graphics Library
         run: |
           brew install tcl-tk
@@ -27,37 +26,39 @@ jobs:
           unzip -o *.zip
           rm *.zip
 
-      # Perbaikan 2: Menangkap log error (stderr) agar kita tahu alasan pasti crash jika gagal
-      - name: Jalankan Aplikasi GUI di Latar Belakang
+      - name: Jalankan Aplikasi GUI Menggunakan macOS Launch Services
         run: |
+          # 1. Berikan izin eksekusi penuh pada paket biner internal
           chmod +x main_gui.app/Contents/MacOS/main_gui
           
-          # Jalankan biner dan alihkan semua pesan error ke file app_error.log
-          ./main_gui.app/Contents/MacOS/main_gui > app_output.log 2> app_error.log &
-          APP_PID=$!
+          # 2. Buka aplikasi menggunakan perintah 'open' macOS agar lolos blokir WindowServer
+          open main_gui.app
           
-          sleep 12
-          kill $APP_PID || true
+          # 3. Tunggu 15 detik untuk memberi waktu aplikasi membaca Excel & membuat PDF
+          echo "Menunggu aplikasi GUI memproses data..."
+          sleep 15
 
       - name: Install Tool Ekstraksi PDF
         run: brew install poppler
 
       - name: Verifikasi Hasil Output PDF
         run: |
-          # Perbaikan 3: Jika folder Output_Sample tidak ada, tampilkan isi log error untuk debugging
+          # 4. Ambil log sistem dari Console macOS jika aplikasi ternyata menutup sendiri
+          echo "=== MEMBACA LOG HISTORI SYSTEM (Jika ada crash) ==="
+          log show --predicate 'process == "main_gui"' --last 1m || true
+          echo "=================================================="
+
+          # 5. Pastikan folder Output_Sample terbuat dan tidak kosong
           if [ ! -d "Output_Sample" ] || [ ! "$(ls -A Output_Sample/*.pdf 2>/dev/null)" ]; then
-            echo "=== LOG OUTPUT APLIKASI ==="
-            cat app_output.log || true
-            echo "=== LOG ERROR APLIKASI (Penyebab Crash) ==="
-            cat app_error.log || true
-            echo "==========================================="
-            echo "Error: Aplikasi GUI crash atau gagal membuat file PDF!"
+            echo "Error: Folder Output_Sample tidak ditemukan atau aplikasi gagal mengekstrak PDF!"
             exit 1
           fi
           
+          # 6. Ekstrak teks dari PDF hasil untuk validasi data
           FILE_PDF=$(ls Output_Sample/*.pdf | head -n 1)
           pdftotext "$FILE_PDF" teks_hasil.txt
           
+          # 7. Validasi kata kunci sampel (Ganti "Budi" sesuai data Excel Anda)
           if grep -q "AL" teks_hasil.txt; then
             echo "Sukses: Aplikasi GUI berhasil melakukan autofill data ke PDF!"
           else
@@ -66,12 +67,9 @@ jobs:
             exit 1
           fi
 
-      - name: Simpan Log dan PDF ke Artefak GitHub
+      - name: Simpan PDF Hasil ke Artefak GitHub
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Hasil-dan-Log-GUI-Test
-          path: |
-            Output_Sample/
-            app_error.log
-            app_output.log
+          name: Hasil-PDF-GUI-Test
+          path: Output_Sample/
